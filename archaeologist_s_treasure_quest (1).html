@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100 select-none">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archaeologist's Treasure Quest: LiDAR & Radar Scanner</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        lidar: '#10b981',
+                        gpr: '#06b6d4',
+                        mag: '#f97316',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden bg-slate-950 text-slate-200">
+
+    <!-- Top Navigation Header -->
+    <header class="h-14 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 flex items-center justify-between shrink-0 z-20">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <i class="fa-solid font-bold fa-satellite-dish text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-sm sm:text-base text-slate-100 leading-tight">ARCHAEOLOGIST'S QUEST</h1>
+                <p class="text-[10px] sm:text-xs text-slate-400 font-mono">LiDAR & Subsurface Radar Suite v3.2</p>
+            </div>
+        </div>
+
+        <!-- Status & Stats Bar -->
+        <div class="flex items-center space-x-3 sm:space-x-6 text-xs sm:text-sm font-mono">
+            <div class="flex items-center space-x-2 bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700">
+                <i class="fa-solid fa-coins text-amber-400"></i>
+                <span class="text-slate-400 hidden sm:inline">Budget:</span>
+                <span id="stat-funds" class="font-bold text-amber-300">$0</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700">
+                <i class="fa-solid fa-trophy text-purple-400"></i>
+                <span class="text-slate-400 hidden sm:inline">Score:</span>
+                <span id="stat-score" class="font-bold text-purple-300">0</span>
+            </div>
+            <button id="btn-copy-link" class="w-8 h-8 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-300 transition" title="Copy App Link">
+                <i class="fa-solid fa-link" id="link-icon"></i>
+            </button>
+            <button id="btn-audio" class="w-8 h-8 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-300 transition" title="Toggle Sound">
+                <i class="fa-solid fa-volume-high" id="audio-icon"></i>
+            </button>
+            <button id="btn-help" class="w-8 h-8 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-300 transition" title="Help / Guide">
+                <i class="fa-solid fa-circle-question"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Workspace -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+
+        <!-- Left Toolbar / Mode & Site Selection Controls -->
+        <aside class="w-full md:w-64 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-900/50 p-3 flex flex-row md:flex-col justify-between shrink-0 space-y-0 md:space-y-4 gap-2 overflow-x-auto md:overflow-y-auto">
+            
+            <!-- Site Selector -->
+            <div class="space-y-2 min-w-[160px] md:min-w-0">
+                <label class="text-[11px] font-mono font-semibold uppercase tracking-wider text-slate-400 block">Dig Site Sector</label>
+                <select id="site-selector" class="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs py-2 px-2.5 font-mono text-slate-200 focus:outline-none focus:border-emerald-500">
+                    <option value="jungle">🌴 Maya Jungle Ruins</option>
+                    <option value="desert">🏜️ Valley of Kings Desert</option>
+                    <option value="sunken">⚓ Sunken Mediterranean City</option>
+                </select>
+            </div>
+
+            <!-- Scanning Mode Selector Buttons -->
+            <div class="space-y-2 flex-1 min-w-[280px] md:min-w-0">
+                <label class="text-[11px] font-mono font-semibold uppercase tracking-wider text-slate-400 block">Scanner Spectrum</label>
+                <div class="grid grid-cols-3 md:grid-cols-1 gap-1.5">
+                    <button id="mode-lidar" class="mode-btn flex items-center space-x-2.5 px-3 py-2 rounded-lg border text-left transition text-xs font-mono bg-emerald-950/40 border-emerald-500 text-emerald-300">
+                        <i class="fa-solid fa-cubes text-sm"></i>
+                        <div class="truncate">
+                            <div class="font-bold">LiDAR</div>
+                            <div class="text-[9px] opacity-75 hidden md:block">Surface Topography</div>
+                        </div>
+                    </button>
+                    <button id="mode-gpr" class="mode-btn flex items-center space-x-2.5 px-3 py-2 rounded-lg border text-left transition text-xs font-mono bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600">
+                        <i class="fa-solid fa-wave-square text-sm"></i>
+                        <div class="truncate">
+                            <div class="font-bold">GPR Radar</div>
+                            <div class="text-[9px] opacity-75 hidden md:block">Subsurface Depth</div>
+                        </div>
+                    </button>
+                    <button id="mode-mag" class="mode-btn flex items-center space-x-2.5 px-3 py-2 rounded-lg border text-left transition text-xs font-mono bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600">
+                        <i class="fa-solid fa-magnet text-sm"></i>
+                        <div class="truncate">
+                            <div class="font-bold">Magnetometer</div>
+                            <div class="text-[9px] opacity-75 hidden md:block">Metal Anomalies</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs for Side Panels -->
+            <div class="space-y-1 pt-0 md:pt-2 border-t border-slate-800 flex flex-row md:flex-col gap-1 min-w-[180px] md:min-w-0">
+                <button id="tab-scanner" class="panel-tab-btn w-full px-3 py-2 rounded-lg text-xs font-mono text-left flex items-center justify-between bg-slate-800 text-emerald-400 border border-slate-700">
+                    <span><i class="fa-solid fa-crosshairs mr-2"></i>Scanner View</span>
+                    <i class="fa-solid fa-chevron-right text-[10px] hidden md:inline"></i>
+                </button>
+                <button id="tab-museum" class="panel-tab-btn w-full px-3 py-2 rounded-lg text-xs font-mono text-left flex items-center justify-between bg-slate-900 text-slate-400 border border-transparent hover:border-slate-800">
+                    <span><i class="fa-solid fa-landmark mr-2"></i>Museum Codex</span>
+                    <span id="badge-artifacts" class="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-slate-300">0</span>
+                </button>
+                <button id="tab-upgrades" class="panel-tab-btn w-full px-3 py-2 rounded-lg text-xs font-mono text-left flex items-center justify-between bg-slate-900 text-slate-400 border border-transparent hover:border-slate-800">
+                    <span><i class="fa-solid fa-microchip mr-2"></i>Tech Upgrades</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Center Workspace: Map / Excavation Screen -->
+        <main class="flex-1 flex flex-col relative bg-slate-950 overflow-hidden">
+            
+            <!-- SCANNER VIEW -->
+            <div id="view-scanner" class="absolute inset-0 flex flex-col">
+                <!-- Top Status Bar overlay -->
+                <div class="p-3 bg-slate-900/80 border-b border-slate-800/80 backdrop-blur flex justify-between items-center z-10 font-mono text-xs">
+                    <div class="flex items-center space-x-4">
+                        <div id="status-signal-container" class="flex items-center space-x-2">
+                            <span class="text-slate-400">Signal:</span>
+                            <div class="w-24 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 flex">
+                                <div id="signal-bar" class="h-full bg-slate-500 w-0 transition-all duration-150"></div>
+                            </div>
+                            <span id="signal-text" class="text-[10px] text-slate-400">0%</span>
+                        </div>
+                    </div>
+
+                    <!-- Battery Bar -->
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-bolt text-amber-400"></i>
+                        <span class="text-slate-400 hidden sm:inline">Battery:</span>
+                        <div class="w-20 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                            <div id="battery-bar" class="h-full bg-emerald-500 w-full transition-all duration-300"></div>
+                        </div>
+                        <span id="battery-text" class="text-[10px] text-slate-300 font-bold">100%</span>
+                    </div>
+                </div>
+
+                <!-- Canvas Surface Container -->
+                <div class="flex-1 relative overflow-hidden flex items-center justify-center p-2 bg-black">
+                    <!-- Scanline Overlay -->
+                    <div class="absolute inset-0 scanlines opacity-60 z-10 pointer-events-none"></div>
+
+                    <!-- Radar Map Canvas -->
+                    <canvas id="mapCanvas" class="rounded-lg shadow-2xl cursor-crosshair border border-slate-800 max-w-full max-h-full object-contain"></canvas>
+
+                    <!-- Interactive Excavation Prompt Overlay -->
+                    <div id="excavate-prompt" class="hidden absolute bottom-6 bg-slate-900/90 border-2 border-emerald-500/80 px-6 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center space-x-4 z-20 animate-bounce">
+                        <div class="text-emerald-400 text-2xl animate-pulse">
+                            <i class="fa-solid fa-bullseye"></i>
+                        </div>
+                        <div>
+                            <div class="font-bold text-sm text-emerald-300 font-mono">ANOMALY DETECTED</div>
+                            <div class="text-[11px] text-slate-300">Subsurface target localized!</div>
+                        </div>
+                        <button id="btn-start-excavate" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-xs px-4 py-2 rounded-lg shadow transition transform active:scale-95">
+                            <i class="fa-solid fa-shovel mr-1"></i> EXCAVATE NOW
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Footer Mode Indicator / Control Bar -->
+                <div class="p-2.5 bg-slate-900/90 border-t border-slate-800 flex justify-between items-center text-[11px] font-mono text-slate-400">
+                    <div class="flex items-center space-x-2">
+                        <span id="scanner-mode-indicator" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">MODE: LiDAR</span>
+                        <span id="site-title-indicator" class="hidden sm:inline text-slate-300">Maya Jungle Sector</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span><i class="fa-solid fa-location-crosshairs mr-1 text-slate-500"></i><span id="coords-display">X: 0, Y: 0</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EXCAVATION MINI-GAME VIEW (Initially Hidden) -->
+            <div id="view-excavation" class="hidden absolute inset-0 bg-slate-950 z-30 flex flex-col">
+                <!-- Excavation Bar -->
+                <div class="p-3 bg-slate-900 border-b border-slate-800 flex justify-between items-center font-mono text-xs">
+                    <div class="flex items-center space-x-3">
+                        <span class="text-amber-400 font-bold"><i class="fa-solid fa-brush mr-1"></i>EXCAVATION FIELD</span>
+                        <span id="ex-target-name" class="text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">Unidentified Artifact</span>
+                    </div>
+
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-slate-400">Integrity:</span>
+                            <div class="w-24 h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                                <div id="integrity-bar" class="h-full bg-emerald-500 w-full transition-all"></div>
+                            </div>
+                            <span id="integrity-text" class="text-[10px] text-emerald-400">100%</span>
+                        </div>
+
+                        <button id="btn-cancel-excavate" class="text-slate-400 hover:text-rose-400 text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700">
+                            Abandon
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dig Canvas View -->
+                <div class="flex-1 relative flex items-center justify-center p-3 bg-slate-950 overflow-hidden">
+                    <canvas id="digCanvas" class="rounded-xl border border-slate-800 shadow-2xl cursor-crosshair max-w-full max-h-full"></canvas>
+
+                    <!-- Tool Speed Indicator -->
+                    <div class="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-800 px-3 py-2 rounded-lg font-mono text-[11px] text-slate-300 flex items-center space-x-2 backdrop-blur">
+                        <i class="fa-solid fa-gauge-high text-sky-400"></i>
+                        <span>Brush Speed:</span>
+                        <span id="brush-speed-text" class="text-emerald-400 font-bold">Optimal</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MUSEUM CODEX VIEW (Initially Hidden) -->
+            <div id="view-museum" class="hidden absolute inset-0 bg-slate-950 z-20 p-4 sm:p-6 overflow-y-auto">
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-100 flex items-center">
+                                <i class="fa-solid fa-landmark text-amber-400 mr-2"></i>
+                                Royal Antiquities Museum Codex
+                            </h2>
+                            <p class="text-xs text-slate-400 font-mono">Catalog of discovered historical relics & appraised artifacts</p>
+                        </div>
+                        <div class="text-right font-mono text-xs">
+                            <div class="text-slate-400">Cataloged: <span id="museum-count" class="text-emerald-400 font-bold">0 / 12</span></div>
+                            <div class="text-slate-400">Total Appraisal: <span id="museum-total-value" class="text-amber-300 font-bold">$0</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Artifact Grid -->
+                    <div id="museum-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Dynamic Artifact Cards populated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TECH UPGRADES VIEW (Initially Hidden) -->
+            <div id="view-upgrades" class="hidden absolute inset-0 bg-slate-950 z-20 p-4 sm:p-6 overflow-y-auto">
+                <div class="max-w-3xl mx-auto space-y-6">
+                    <div class="border-b border-slate-800 pb-4">
+                        <h2 class="text-xl font-bold text-slate-100 flex items-center">
+                            <i class="fa-solid fa-microchip text-emerald-400 mr-2"></i>
+                            Expedition Equipment Upgrades
+                        </h2>
+                        <p class="text-xs text-slate-400 font-mono">Enhance field radar resolution, battery cells, and precision digging tools</p>
+                    </div>
+
+                    <!-- Upgrade Cards Container -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="upgrades-container">
+                        <!-- Upgrades rendered dynamically -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Discovery Modal -->
+    <div id="modal-discovery" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-2 border-amber-500/50 rounded-2xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl relative overflow-hidden animate-fade-in">
+            <div class="w-20 h-20 mx-auto rounded-full bg-amber-500/10 border-2 border-amber-400/40 flex items-center justify-center text-4xl text-amber-300 shadow-inner">
+                <i id="disc-icon" class="fa-solid fa-gem"></i>
+            </div>
+            <div>
+                <span id="disc-rarity" class="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">RARE</span>
+                <h3 id="disc-title" class="text-xl font-bold text-slate-100 mt-2">Jade Burial Mask</h3>
+                <p id="disc-era" class="text-xs text-amber-400 font-mono mt-0.5">Late Classic Period (600–900 AD)</p>
+            </div>
+            <p id="disc-desc" class="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-left">
+                Intricately carved jade mask worn during sacred royal burial ceremonies.
+            </p>
+            <div class="grid grid-cols-2 gap-2 font-mono text-xs py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                <div>
+                    <div class="text-slate-400 text-[10px]">Appraisal Value</div>
+                    <div id="disc-value" class="text-amber-300 font-bold text-sm">$4,500</div>
+                </div>
+                <div>
+                    <div class="text-slate-400 text-[10px]">Research Bonus</div>
+                    <div id="disc-points" class="text-purple-300 font-bold text-sm">+250 PTS</div>
+                </div>
+            </div>
+            <button id="btn-close-discovery" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold font-mono py-2.5 rounded-xl shadow-lg transition transform active:scale-95">
+                Add to Museum Codex
+            </button>
+        </div>
+    </div>
+
+    <!-- Tutorial / Instructions Modal -->
+    <div id="modal-tutorial" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center space-x-3 border-b border-slate-800 pb-3">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-xl">
+                    <i class="fa-solid fa-compass-drafting"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-base text-slate-100">EXPEDITION BRIEFING</h3>
+                    <p class="text-xs text-slate-400 font-mono">How to operate LiDAR & Radar Equipment</p>
+                </div>
+            </div>
+
+            <div class="space-y-3 text-xs text-slate-300">
+                <div class="flex items-start space-x-3 bg-slate-800/40 p-2.5 rounded-lg border border-slate-800">
+                    <i class="fa-solid fa-1 text-emerald-400 font-bold text-sm mt-0.5"></i>
+                    <div>
+                        <strong class="text-slate-100 font-mono">Scan the Terrain:</strong> Move cursor/finger over the field. Switch modes to reveal distinct signatures:
+                        <ul class="list-disc pl-4 mt-1 text-[11px] text-slate-400 space-y-0.5">
+                            <li><span class="text-emerald-400 font-bold">LiDAR</span>: Displays surface structures and elevation profiles.</li>
+                            <li><span class="text-cyan-400 font-bold">GPR Radar</span>: Penetrates ground layers to spot shapes.</li>
+                            <li><span class="text-amber-400 font-bold">Magnetometer</span>: Detects metallic & magnetic field variance.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="flex items-start space-x-3 bg-slate-800/40 p-2.5 rounded-lg border border-slate-800">
+                    <i class="fa-solid fa-2 text-emerald-400 font-bold text-sm mt-0.5"></i>
+                    <div>
+                        <strong class="text-slate-100 font-mono">Locate Anomaly Hotspots:</strong> Follow the signal meter and radar pulse frequency to pinpoint hidden artifacts.
+                    </div>
+                </div>
+
+                <div class="flex items-start space-x-3 bg-slate-800/40 p-2.5 rounded-lg border border-slate-800">
+                    <i class="fa-solid fa-3 text-emerald-400 font-bold text-sm mt-0.5"></i>
+                    <div>
+                        <strong class="text-slate-100 font-mono">Delicate Excavation:</strong> Click "Excavate" and drag your brush to carefully remove soil. Avoid brushing too fast to protect fragile artifacts!
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-start-game" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono py-2.5 rounded-xl shadow-lg transition transform active:scale-95 text-xs">
+                BEGIN SCANNING EXPEDITION
+            </button>
+        </div>
+    </div>
+
+    <!-- AUDIO SYSTEM & GAME LOGIC SCRIPTS -->
+    <script>
+        /**
+         * Web Audio Synthesizer Engine
+         */
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+            }
+
+            playScanBeep(freq = 440, volume = 0.05) {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + 0.08);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.08);
+                } catch(e) {}
+            }
+
+            playBrushSwoosh() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const bufferSize = this.ctx.sampleRate * 0.05;
+                    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = Math.random() * 2 - 1;
+                    }
+                    const noise = this.ctx.createBufferSource();
+                    noise.buffer = buffer;
+
+                    const filter = this.ctx.createBiquadFilter();
+                    filter.type = 'bandpass';
+                    filter.frequency.value = 800;
+
+                    const gain = this.ctx.createGain();
+                    gain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    noise.start();
+                } catch(e) {}
+            }
+
+            playDiscoveryChime() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                    notes.forEach((freq, idx) => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.08);
+                        gain.gain.setValueAtTime(0.1, this.ctx.currentTime + idx * 0.08);
+                        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.08 + 0.3);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start(this.ctx.currentTime + idx * 0.08);
+                        osc.stop(this.ctx.currentTime + idx * 0.08 + 0.3);
+                    });
+                } catch(e) {}
+            }
+
+            playClick() {
+                if (!this.enabled || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.03);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.03);
+                } catch(e) {}
+            }
+        }
+
+        const audio = new SoundEngine();
+
+        /**
+         * Artifact Data & Catalog Database
+         */
+        const ARTIFACT_DATABASE = [
+            // Maya Jungle
+            { id: 'm1', site: 'jungle', name: 'Jade Royal Mask', era: 'Classic Maya (600 AD)', rarity: 'Legendary', value: 5000, points: 300, icon: 'fa-mask', desc: 'Carved jade ceremonial mask representing the Sun God Kinich Ahau.', metallic: false, shape: 'face' },
+            { id: 'm2', site: 'jungle', name: 'Obsidian Ritual Dagger', era: 'Late Classic Maya', rarity: 'Rare', value: 2200, points: 150, icon: 'fa-gavel', desc: 'Volcanic glass blade with volcanic glass sheen, used for ceremonial offerings.', metallic: false, shape: 'blade' },
+            { id: 'm3', site: 'jungle', name: 'Golden Solar Disk', era: 'Post-Classic Maya', rarity: 'Legendary', value: 6500, points: 400, icon: 'fa-compact-disc', desc: 'High-purity gold hammered plate depicting celestial constellations.', metallic: true, shape: 'circle' },
+            { id: 'm4', site: 'jungle', name: 'Clay Glyph Tablet', era: 'Early Classic Maya', rarity: 'Common', value: 800, points: 80, icon: 'fa-cubes', desc: 'Terracotta brick carved with ancient mathematical calendars.', metallic: false, shape: 'square' },
+
+            // Desert Valley
+            { id: 'd1', site: 'desert', name: 'Scarab Amulet of Gold', era: 'New Kingdom Egypt', rarity: 'Rare', value: 3200, points: 200, icon: 'fa-bugs', desc: 'Inscribed golden beetle symbolizing rebirth and royal protection.', metallic: true, shape: 'oval' },
+            { id: 'd2', site: 'desert', name: 'Anubis Bronze Statue', era: 'Ptolemaic Period', rarity: 'Legendary', value: 7200, points: 450, icon: 'fa-dog', desc: 'Cast bronze statuette of the jackal guardian god Anubis.', metallic: true, shape: 'statue' },
+            { id: 'd3', site: 'desert', name: 'Canopic Limestone Jar', era: 'Middle Kingdom', rarity: 'Common', value: 1200, points: 100, icon: 'fa-jar', desc: 'Hand-carved limestone jar preserved with ceremonial seal inscriptions.', metallic: false, shape: 'jar' },
+            { id: 'd4', site: 'desert', name: 'Pharaoh\'s Lapis Seal', era: '18th Dynasty', rarity: 'Mythic', value: 12000, points: 800, icon: 'fa-crown', desc: 'Deep blue lazuli stone ring set with royal cartouche insignias.', metallic: true, shape: 'ring' },
+
+            // Sunken City
+            { id: 's1', site: 'sunken', name: 'Bronze Trireme Helmet', era: 'Classical Greece (450 BC)', rarity: 'Rare', value: 3800, points: 240, icon: 'fa-helmet-safety', desc: 'Corinthian bronze war helmet recovered from a sunken galley wreck.', metallic: true, shape: 'helmet' },
+            { id: 's2', site: 'sunken', name: 'Amphora Wine Vessel', era: 'Roman Empire (100 AD)', rarity: 'Common', value: 950, points: 90, icon: 'fa-wine-bottle', desc: 'Terracotta storage vessel encrusted with marine coral deposits.', metallic: false, shape: 'vessel' },
+            { id: 's3', site: 'sunken', name: 'Silver Poseidon Coin', era: 'Hellenistic Era', rarity: 'Rare', value: 2800, points: 180, icon: 'fa-coins', desc: 'Pure silver tetradrachm featuring the Greek god of the sea.', metallic: true, shape: 'coin' },
+            { id: 's4', site: 'sunken', name: 'Antikythera Bronze Gear', era: '2nd Century BC', rarity: 'Mythic', value: 15000, points: 1000, icon: 'fa-gear', desc: 'Complex astronomical gear mechanism from an ancient analog computer.', metallic: true, shape: 'gear' }
+        ];
+
+        /**
+         * Game State Controller
+         */
+        const state = {
+            funds: 100,
+            score: 0,
+            currentSite: 'jungle',
+            scanMode: 'lidar', // 'lidar', 'gpr', 'mag'
+            batteryMax: 100,
+            battery: 100,
+            batteryRegenRate: 8, // per second
+            discoveredIds: new Set(),
+            
+            // Equipment Upgrades
+            upgrades: {
+                radius: { level: 1, max: 5, cost: 150, name: 'Beam Aperture', desc: 'Increases scan radius' },
+                radar: { level: 1, max: 5, cost: 200, name: 'Signal Processor', desc: 'Enhances detection sensitivity' },
+                brush: { level: 1, max: 5, cost: 250, name: 'Precision Soft Brush', desc: 'Increases excavation safety' },
+                battery: { level: 1, max: 5, cost: 180, name: 'Lithium Fuel Cell', desc: 'Expands maximum scanner energy' }
+            },
+
+            // Active Targets on Field
+            activeTargets: [],
+            selectedTarget: null,
+
+            // Scanner Cursor State
+            cursor: { x: -100, y: -100, active: false },
+            
+            // Excavation Mini-Game State
+            excavation: {
+                active: false,
+                target: null,
+                integrity: 100,
+                progress: 0,
+                lastPoint: null
+            }
+        };
+
+        // DOM Element Cache
+        const elements = {
+            mapCanvas: document.getElementById('mapCanvas'),
+            digCanvas: document.getElementById('digCanvas'),
+            siteSelector: document.getElementById('site-selector'),
+            modeBtns: {
+                lidar: document.getElementById('mode-lidar'),
+                gpr: document.getElementById('mode-gpr'),
+                mag: document.getElementById('mode-mag')
+            },
+            tabs: {
+                scanner: document.getElementById('tab-scanner'),
+                museum: document.getElementById('tab-museum'),
+                upgrades: document.getElementById('tab-upgrades')
+            },
+            views: {
+                scanner: document.getElementById('view-scanner'),
+                excavation: document.getElementById('view-excavation'),
+                museum: document.getElementById('view-museum'),
+                upgrades: document.getElementById('view-upgrades')
+            },
+            statFunds: document.getElementById('stat-funds'),
+            statScore: document.getElementById('stat-score'),
+            signalBar: document.getElementById('signal-bar'),
+            signalText: document.getElementById('signal-text'),
+            batteryBar: document.getElementById('battery-bar'),
+            batteryText: document.getElementById('battery-text'),
+            excavatePrompt: document.getElementById('excavate-prompt'),
+            btnStartExcavate: document.getElementById('btn-start-excavate'),
+            btnCancelExcavate: document.getElementById('btn-cancel-excavate'),
+            modalDiscovery: document.getElementById('modal-discovery'),
+            modalTutorial: document.getElementById('modal-tutorial'),
+            btnCloseDiscovery: document.getElementById('btn-close-discovery'),
+            btnStartGame: document.getElementById('btn-start-game'),
+            btnAudio: document.getElementById('btn-audio'),
+            audioIcon: document.getElementById('audio-icon'),
+            coordsDisplay: document.getElementById('coords-display'),
+            modeIndicator: document.getElementById('scanner-mode-indicator'),
+            siteTitleIndicator: document.getElementById('site-title-indicator'),
+            museumGrid: document.getElementById('museum-grid'),
+            museumCount: document.getElementById('museum-count'),
+            museumTotalValue: document.getElementById('museum-total-value'),
+            badgeArtifacts: document.getElementById('badge-artifacts'),
+            upgradesContainer: document.getElementById('upgrades-container'),
+            integrityBar: document.getElementById('integrity-bar'),
+            integrityText: document.getElementById('integrity-text'),
+            brushSpeedText: document.getElementById('brush-speed-text'),
+            exTargetName: document.getElementById('ex-target-name')
+        };
+
+        let mapCtx = elements.mapCanvas.getContext('2d');
+        let digCtx = elements.digCanvas.getContext('2d');
+
+        /**
+         * Initialize Field Targets for Site
+         */
+        function spawnSiteTargets() {
+            state.activeTargets = [];
+            const siteArtifacts = ARTIFACT_DATABASE.filter(a => a.site === state.currentSite);
+            
+            // Randomly scatter site artifacts across the canvas space (scaled to 1000x1000 standard coords)
+            siteArtifacts.forEach(artifact => {
+                const margin = 120;
+                state.activeTargets.push({
+                    artifact: artifact,
+                    x: margin + Math.random() * (1000 - margin * 2),
+                    y: margin + Math.random() * (1000 - margin * 2),
+                    discovered: state.discoveredIds.has(artifact.id)
+                });
+            });
+        }
+
+        /**
+         * Resize Canvases Dynamically
+         */
+        function resizeCanvases() {
+            const mapContainer = elements.mapCanvas.parentElement;
+            const w = mapContainer.clientWidth - 16;
+            const h = mapContainer.clientHeight - 16;
+            const size = Math.min(w, h, 800);
+
+            elements.mapCanvas.width = size;
+            elements.mapCanvas.height = size;
+
+            const digContainer = elements.digCanvas.parentElement;
+            const dw = Math.min(digContainer.clientWidth - 32, 600);
+            const dh = Math.min(digContainer.clientHeight - 32, 600);
+            elements.digCanvas.width = dw;
+            elements.digCanvas.height = dh;
+
+            if (state.excavation.active) {
+                renderDigCanvasBackground();
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvases);
+
+        /**
+         * Main Render Loop for Scanner Canvas
+         */
+        let lastTime = performance.now();
+        let sweepAngle = 0;
+
+        function animate(now) {
+            const dt = (now - lastTime) / 1000;
+            lastTime = now;
+
+            // Battery recharge when not scanning actively
+            if (!state.cursor.active && state.battery < state.batteryMax) {
+                state.battery = Math.min(state.batteryMax, state.battery + state.batteryRegenRate * dt);
+                updateBatteryUI();
+            }
+
+            renderScannerMap(now);
+            requestAnimationFrame(animate);
+        }
+
+        /**
+         * Render Top-Down Scanner Canvas View
+         */
+        function renderScannerMap(time) {
+            const w = elements.mapCanvas.width;
+            const h = elements.mapCanvas.height;
+            if (!w || !h) return;
+
+            mapCtx.fillStyle = '#020617'; // Dark background
+            mapCtx.fillRect(0, 0, w, h);
+
+            // Draw Background Terrain Features based on Site Mode & Scanner Mode
+            drawTerrainGrid(w, h);
+
+            // Radar Sweep Animation Effect
+            sweepAngle = (sweepAngle + 0.02) % (Math.PI * 2);
+            const cx = w / 2;
+            const cy = h / 2;
+
+            mapCtx.save();
+            mapCtx.strokeStyle = state.scanMode === 'lidar' ? 'rgba(16, 185, 129, 0.15)' : 
+                                state.scanMode === 'gpr' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(249, 115, 22, 0.15)';
+            mapCtx.lineWidth = 1;
+            mapCtx.beginPath();
+            mapCtx.arc(cx, cy, w * 0.45, 0, Math.PI * 2);
+            mapCtx.stroke();
+            mapCtx.restore();
+
+            // Check scanner proximity to targets
+            let maxSignal = 0;
+            let closestTarget = null;
+            const scanRadius = (40 + state.upgrades.radius.level * 12) * (w / 1000);
+
+            if (state.cursor.active && state.battery > 0) {
+                // Consume Battery
+                state.battery = Math.max(0, state.battery - 6 * dt);
+                updateBatteryUI();
+
+                // Convert cursor screen coordinates to map scale (1000x1000)
+                const mapX = (state.cursor.x / w) * 1000;
+                const mapY = (state.cursor.y / h) * 1000;
+
+                state.activeTargets.forEach(target => {
+                    if (target.discovered) return;
+
+                    const dx = target.x - mapX;
+                    const dy = target.y - mapY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    // Signal calculation based on scanner mode and target properties
+                    let detectionFactor = 1.0;
+                    if (state.scanMode === 'mag' && !target.artifact.metallic) detectionFactor = 0.2;
+                    if (state.scanMode === 'lidar' && target.artifact.metallic) detectionFactor = 0.7;
+
+                    const sensitivity = 1 + (state.upgrades.radar.level - 1) * 0.2;
+                    const maxDist = 280 * sensitivity;
+
+                    if (dist < maxDist) {
+                        const signal = Math.max(0, (1 - dist / maxDist) * detectionFactor);
+                        if (signal > maxSignal) {
+                            maxSignal = signal;
+                            closestTarget = target;
+                        }
+                    }
+                });
+
+                // Draw Scanner Cursor Spotlight
+                mapCtx.save();
+                const color = state.scanMode === 'lidar' ? '#10b981' : state.scanMode === 'gpr' ? '#06b6d4' : '#f97316';
+                
+                // Outer glow
+                const grad = mapCtx.createRadialGradient(state.cursor.x, state.cursor.y, 5, state.cursor.x, state.cursor.y, scanRadius);
+                grad.addColorStop(0, color + '66');
+                grad.addColorStop(0.7, color + '22');
+                grad.addColorStop(1, 'transparent');
+
+                mapCtx.fillStyle = grad;
+                mapCtx.beginPath();
+                mapCtx.arc(state.cursor.x, state.cursor.y, scanRadius, 0, Math.PI * 2);
+                mapCtx.fill();
+
+                // Crosshair cursor
+                mapCtx.strokeStyle = color;
+                mapCtx.lineWidth = 1.5;
+                mapCtx.beginPath();
+                mapCtx.arc(state.cursor.x, state.cursor.y, 8, 0, Math.PI * 2);
+                mapCtx.moveTo(state.cursor.x - 14, state.cursor.y); mapCtx.lineTo(state.cursor.x + 14, state.cursor.y);
+                mapCtx.moveTo(state.cursor.x, state.cursor.y - 14); mapCtx.lineTo(state.cursor.x, state.cursor.y + 14);
+                mapCtx.stroke();
+                mapCtx.restore();
+
+                // Audio Ping when near signal
+                if (maxSignal > 0.3 && Math.random() < maxSignal * 0.15) {
+                    audio.playScanBeep(300 + maxSignal * 600, 0.03 * maxSignal);
+                }
+            }
+
+            // Update Signal Bar UI
+            const signalPct = Math.round(maxSignal * 100);
+            elements.signalBar.style.width = signalPct + '%';
+            elements.signalText.textContent = signalPct + '%';
+            
+            if (signalPct > 70) {
+                elements.signalBar.className = "h-full bg-emerald-400 animate-pulse";
+                elements.excavatePrompt.classList.remove('hidden');
+                state.selectedTarget = closestTarget;
+            } else {
+                elements.signalBar.className = signalPct > 30 ? "h-full bg-amber-400" : "h-full bg-slate-500";
+                elements.excavatePrompt.classList.add('hidden');
+                state.selectedTarget = null;
+            }
+        }
+
+        let dt = 0.016; // default step
+
+        /**
+         * Render Scanner Mode Visual Terrain Overlays
+         */
+        function drawTerrainGrid(w, h) {
+            mapCtx.save();
+            const step = 40 * (w / 800);
+
+            if (state.scanMode === 'lidar') {
+                // LiDAR Surface Wireframe Contour Effect
+                mapCtx.strokeStyle = 'rgba(16, 185, 129, 0.12)';
+                mapCtx.lineWidth = 1;
+                for (let x = 0; x <= w; x += step) {
+                    mapCtx.beginPath();
+                    mapCtx.moveTo(x, 0);
+                    mapCtx.lineTo(x, h);
+                    mapCtx.stroke();
+                }
+                for (let y = 0; y <= h; y += step) {
+                    mapCtx.beginPath();
+                    mapCtx.moveTo(0, y);
+                    mapCtx.lineTo(w, y);
+                    mapCtx.stroke();
+                }
+
+                // Render Discovered Target Icons on Map
+                state.activeTargets.forEach(t => {
+                    if (t.discovered) {
+                        const px = (t.x / 1000) * w;
+                        const py = (t.y / 1000) * h;
+                        mapCtx.fillStyle = 'rgba(16, 185, 129, 0.4)';
+                        mapCtx.beginPath();
+                        mapCtx.arc(px, py, 6, 0, Math.PI * 2);
+                        mapCtx.fill();
+                    }
+                });
+
+            } else if (state.scanMode === 'gpr') {
+                // Ground Penetrating Radar Waves
+                mapCtx.strokeStyle = 'rgba(6, 182, 212, 0.1)';
+                mapCtx.lineWidth = 2;
+                const timeScale = performance.now() * 0.001;
+                for (let r = 20; r < w * 0.7; r += 50) {
+                    const waveR = (r + timeScale * 30) % (w * 0.7);
+                    mapCtx.beginPath();
+                    mapCtx.arc(w / 2, h / 2, waveR, 0, Math.PI * 2);
+                    mapCtx.stroke();
+                }
+
+            } else if (state.scanMode === 'mag') {
+                // Magnetometer Magnetic Dipole Overlay Grid
+                mapCtx.fillStyle = 'rgba(249, 115, 22, 0.05)';
+                for (let x = 20; x < w; x += 60) {
+                    for (let y = 20; y < h; y += 60) {
+                        mapCtx.beginPath();
+                        mapCtx.arc(x, y, 2, 0, Math.PI * 2);
+                        mapCtx.fill();
+                    }
+                }
+            }
+            mapCtx.restore();
+        }
+
+        /**
+         * Battery Status Helper
+         */
+        function updateBatteryUI() {
+            const pct = Math.round((state.battery / state.batteryMax) * 100);
+            elements.batteryBar.style.width = pct + '%';
+            elements.batteryText.textContent = pct + '%';
+            if (pct < 20) {
+                elements.batteryBar.className = "h-full bg-rose-500 animate-pulse";
+            } else if (pct < 50) {
+                elements.batteryBar.className = "h-full bg-amber-500";
+            } else {
+                elements.batteryBar.className = "h-full bg-emerald-500";
+            }
+        }
+
+        /**
+         * Excavation Mini-Game Logic
+         */
+        function startExcavation() {
+            if (!state.selectedTarget) return;
+
+            state.excavation.active = true;
+            state.excavation.target = state.selectedTarget;
+            state.excavation.integrity = 100;
+            state.excavation.progress = 0;
+            state.excavation.lastPoint = null;
+
+            elements.exTargetName.textContent = state.selectedTarget.artifact.name;
+            elements.integrityBar.style.width = '100%';
+            elements.integrityText.textContent = '100%';
+
+            elements.views.excavation.classList.remove('hidden');
+            resizeCanvases();
+            renderDigCanvasBackground();
+            audio.playClick();
+        }
+
+        function renderDigCanvasBackground() {
+            const w = elements.digCanvas.width;
+            const h = elements.digCanvas.height;
+            if (!w || !h) return;
+
+            // Fill canvas with dirt/sand topsoil
+            digCtx.fillStyle = state.currentSite === 'desert' ? '#78350f' : state.currentSite === 'jungle' ? '#271c19' : '#0f2942';
+            digCtx.fillRect(0, 0, w, h);
+
+            // Add texture grain
+            for (let i = 0; i < 1500; i++) {
+                digCtx.fillStyle = Math.random() > 0.5 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.05)';
+                digCtx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+            }
+
+            // Draw underlying hidden artifact silhouette in center
+            digCtx.save();
+            digCtx.fillStyle = '#f59e0b';
+            digCtx.shadowColor = 'rgba(245, 158, 11, 0.5)';
+            digCtx.shadowBlur = 15;
+            
+            const cx = w / 2;
+            const cy = h / 2;
+            const size = Math.min(w, h) * 0.35;
+
+            // Render shape based on artifact type
+            digCtx.beginPath();
+            const shape = state.excavation.target.artifact.shape;
+            if (shape === 'circle' || shape === 'coin') {
+                digCtx.arc(cx, cy, size, 0, Math.PI * 2);
+            } else if (shape === 'blade') {
+                digCtx.ellipse(cx, cy, size * 0.3, size * 1.2, Math.PI / 4, 0, Math.PI * 2);
+            } else if (shape === 'jar' || shape === 'vessel') {
+                digCtx.rect(cx - size * 0.6, cy - size * 0.8, size * 1.2, size * 1.6);
+            } else {
+                digCtx.arc(cx, cy, size * 0.8, 0, Math.PI * 2);
+            }
+            digCtx.fill();
+            digCtx.restore();
+
+            // Cover back up with opaque topsoil dirt layer
+            digCtx.fillStyle = state.currentSite === 'desert' ? '#d97706' : state.currentSite === 'jungle' ? '#3f2c27' : '#1e3a5f';
+            digCtx.fillRect(0, 0, w, h);
+        }
+
+        /**
+         * Excavation Brush Interaction
+         */
+        let isBrushing = false;
+
+        function handleBrushMove(e) {
+            if (!state.excavation.active || !isBrushing) return;
+
+            const rect = elements.digCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            if (state.excavation.lastPoint) {
+                const dx = x - state.excavation.lastPoint.x;
+                const dy = y - state.excavation.lastPoint.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // Brush Speed Control: Moving too fast damages delicate artifact
+                const safeSpeed = 15 + state.upgrades.brush.level * 6;
+                if (dist > safeSpeed) {
+                    const damage = (dist - safeSpeed) * 0.4;
+                    state.excavation.integrity = Math.max(0, state.excavation.integrity - damage);
+                    elements.integrityBar.style.width = Math.round(state.excavation.integrity) + '%';
+                    elements.integrityText.textContent = Math.round(state.excavation.integrity) + '%';
+                    elements.brushSpeedText.textContent = "TOO FAST! CAUTION";
+                    elements.brushSpeedText.className = "text-rose-400 font-bold animate-pulse";
+                } else {
+                    elements.brushSpeedText.textContent = "Optimal Speed";
+                    elements.brushSpeedText.className = "text-emerald-400 font-bold";
+                }
+
+                // Erase soil layer
+                digCtx.save();
+                digCtx.globalCompositeOperation = 'destination-out';
+                digCtx.beginPath();
+                const brushSize = 25 + state.upgrades.brush.level * 5;
+                digCtx.arc(x, y, brushSize, 0, Math.PI * 2);
+                digCtx.fill();
+                digCtx.restore();
+
+                audio.playBrushSwoosh();
+
+                // Check cleared percentage area around center
+                checkExcavationProgress();
+            }
+
+            state.excavation.lastPoint = { x, y };
+        }
+
+        function checkExcavationProgress() {
+            const w = elements.digCanvas.width;
+            const h = elements.digCanvas.height;
+            const imgData = digCtx.getImageData(w * 0.25, h * 0.25, w * 0.5, h * 0.5);
+            let cleared = 0;
+            const total = imgData.data.length / 4;
+
+            for (let i = 3; i < imgData.data.length; i += 4) {
+                if (imgData.data[i] === 0) cleared++;
+            }
+
+            const ratio = cleared / total;
+            if (ratio > 0.55 || state.excavation.integrity <= 0) {
+                finishExcavation();
+            }
+        }
+
+        function finishExcavation() {
+            state.excavation.active = false;
+            elements.views.excavation.classList.add('hidden');
+
+            const artifact = state.excavation.target.artifact;
+            const integrityFactor = state.excavation.integrity / 100;
+            
+            if (integrityFactor > 0.2) {
+                // Successful discovery!
+                state.selectedTarget.discovered = true;
+                state.discoveredIds.add(artifact.id);
+
+                const finalValue = Math.round(artifact.value * (0.5 + integrityFactor * 0.5));
+                const finalPoints = Math.round(artifact.points * integrityFactor);
+
+                state.funds += finalValue;
+                state.score += finalPoints;
+
+                updateHeaderStats();
+                showDiscoveryModal(artifact, finalValue, finalPoints);
+                audio.playDiscoveryChime();
+            } else {
+                alert("The artifact was shattered due to rough excavation! Work more delicately next time.");
+            }
+        }
+
+        /**
+         * Discovery Modal UI
+         */
+        function showDiscoveryModal(artifact, value, points) {
+            document.getElementById('disc-title').textContent = artifact.name;
+            document.getElementById('disc-era').textContent = artifact.era;
+            document.getElementById('disc-desc').textContent = artifact.desc;
+            document.getElementById('disc-rarity').textContent = artifact.rarity;
+            document.getElementById('disc-value').textContent = '$' + value.toLocaleString();
+            document.getElementById('disc-points').textContent = '+' + points + ' PTS';
+            document.getElementById('disc-icon').className = 'fa-solid ' + artifact.icon;
+
+            elements.modalDiscovery.classList.remove('hidden');
+        }
+
+        /**
+         * Museum Codex Builder
+         */
+        function renderMuseum() {
+            elements.museumGrid.innerHTML = '';
+            let totalVal = 0;
+            let count = 0;
+
+            ARTIFACT_DATABASE.forEach(artifact => {
+                const isFound = state.discoveredIds.has(artifact.id);
+                if (isFound) {
+                    count++;
+                    totalVal += artifact.value;
+                }
+
+                const card = document.createElement('div');
+                card.className = `p-4 rounded-xl border font-mono flex flex-col justify-between transition ${
+                    isFound ? 'bg-slate-900 border-slate-700 hover:border-amber-500/50' : 'bg-slate-950/50 border-slate-800/80 opacity-60'
+                }`;
+
+                card.innerHTML = `
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="w-8 h-8 rounded-lg ${isFound ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-600'} flex items-center justify-center text-sm">
+                                <i class="fa-solid ${isFound ? artifact.icon : 'fa-lock'}"></i>
+                            </span>
+                            <span class="text-[10px] px-2 py-0.5 rounded ${
+                                artifact.rarity === 'Mythic' ? 'bg-purple-950 text-purple-300 border border-purple-800' :
+                                artifact.rarity === 'Legendary' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
+                                artifact.rarity === 'Rare' ? 'bg-sky-950 text-sky-300 border border-sky-800' : 'bg-slate-800 text-slate-400'
+                            }">${artifact.rarity}</span>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-sm ${isFound ? 'text-slate-100' : 'text-slate-500'}">${isFound ? artifact.name : 'Unknown Artifact'}</h4>
+                            <p class="text-[10px] text-amber-400/80">${isFound ? artifact.era : '??? Sector'}</p>
+                        </div>
+                        <p class="text-[11px] ${isFound ? 'text-slate-300' : 'text-slate-600'} leading-relaxed">
+                            ${isFound ? artifact.desc : 'Scan and excavate signals in this region to unlock codex records.'}
+                        </p>
+                    </div>
+                    <div class="mt-4 pt-2 border-t border-slate-800 flex justify-between items-center text-[10px]">
+                        <span class="text-slate-500">Appraisal</span>
+                        <span class="font-bold ${isFound ? 'text-amber-300' : 'text-slate-600'}">${isFound ? '$' + artifact.value.toLocaleString() : '$???'}</span>
+                    </div>
+                `;
+                elements.museumGrid.appendChild(card);
+            });
+
+            elements.museumCount.textContent = `${count} / ${ARTIFACT_DATABASE.length}`;
+            elements.museumTotalValue.textContent = '$' + totalVal.toLocaleString();
+            elements.badgeArtifacts.textContent = count;
+        }
+
+        /**
+         * Upgrades UI Builder
+         */
+        function renderUpgrades() {
+            elements.upgradesContainer.innerHTML = '';
+
+            Object.keys(state.upgrades).forEach(key => {
+                const up = state.upgrades[key];
+                const isMax = up.level >= up.max;
+
+                const card = document.createElement('div');
+                card.className = "bg-slate-900 border border-slate-800 p-4 rounded-xl flex justify-between items-center font-mono";
+                card.innerHTML = `
+                    <div class="space-y-1">
+                        <div class="font-bold text-sm text-slate-100">${up.name}</div>
+                        <div class="text-[11px] text-slate-400">${up.desc}</div>
+                        <div class="text-[10px] text-emerald-400">Level ${up.level} / ${up.max}</div>
+                    </div>
+                    <button class="btn-buy-upgrade px-3 py-2 rounded-lg text-xs font-bold transition ${
+                        isMax ? 'bg-slate-800 text-slate-600 cursor-not-allowed' :
+                        state.funds >= up.cost ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    }" data-upgrade="${key}">
+                        ${isMax ? 'MAX' : '$' + up.cost}
+                    </button>
+                `;
+                elements.upgradesContainer.appendChild(card);
+            });
+
+            // Bind Upgrade Click Events
+            document.querySelectorAll('.btn-buy-upgrade').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const key = e.currentTarget.getAttribute('data-upgrade');
+                    const up = state.upgrades[key];
+                    if (up && up.level < up.max && state.funds >= up.cost) {
+                        state.funds -= up.cost;
+                        up.level++;
+                        up.cost = Math.round(up.cost * 1.6);
+                        if (key === 'battery') state.batteryMax += 30;
+                        updateHeaderStats();
+                        renderUpgrades();
+                        audio.playClick();
+                    }
+                });
+            });
+        }
+
+        /**
+         * Header Stats UI Sync
+         */
+        function updateHeaderStats() {
+            elements.statFunds.textContent = '$' + state.funds.toLocaleString();
+            elements.statScore.textContent = state.score.toLocaleString();
+        }
+
+        /**
+         * Event Listeners & Interactions Setup
+         */
+        function initEvents() {
+            // Site Selector Switch
+            elements.siteSelector.addEventListener('change', (e) => {
+                state.currentSite = e.target.value;
+                const titles = {
+                    jungle: 'Maya Jungle Sector',
+                    desert: 'Valley of Kings Desert',
+                    sunken: 'Sunken Mediterranean City'
+                };
+                elements.siteTitleIndicator.textContent = titles[state.currentSite];
+                spawnSiteTargets();
+                audio.playClick();
+            });
+
+            // Scanner Spectrum Mode Toggle Buttons
+            Object.keys(elements.modeBtns).forEach(mode => {
+                elements.modeBtns[mode].addEventListener('click', () => {
+                    state.scanMode = mode;
+                    Object.keys(elements.modeBtns).forEach(m => {
+                        const btn = elements.modeBtns[m];
+                        if (m === mode) {
+                            btn.className = `mode-btn flex items-center space-x-2.5 px-3 py-2 rounded-lg border text-left transition text-xs font-mono ${
+                                mode === 'lidar' ? 'bg-emerald-950/40 border-emerald-500 text-emerald-300' :
+                                mode === 'gpr' ? 'bg-cyan-950/40 border-cyan-500 text-cyan-300' : 'bg-amber-950/40 border-amber-500 text-amber-300'
+                            }`;
+                        } else {
+                            btn.className = "mode-btn flex items-center space-x-2.5 px-3 py-2 rounded-lg border text-left transition text-xs font-mono bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600";
+                        }
+                    });
+                    elements.modeIndicator.textContent = `MODE: ${mode.toUpperCase()}`;
+                    audio.playClick();
+                });
+            });
+
+            // View Navigation Tabs
+            Object.keys(elements.tabs).forEach(tabKey => {
+                elements.tabs[tabKey].addEventListener('click', () => {
+                    Object.keys(elements.views).forEach(vKey => {
+                        if (vKey === tabKey) {
+                            elements.views[vKey].classList.remove('hidden');
+                        } else if (vKey !== 'excavation') {
+                            elements.views[vKey].classList.add('hidden');
+                        }
+                    });
+
+                    Object.keys(elements.tabs).forEach(tKey => {
+                        const btn = elements.tabs[tKey];
+                        if (tKey === tabKey) {
+                            btn.className = "panel-tab-btn w-full px-3 py-2 rounded-lg text-xs font-mono text-left flex items-center justify-between bg-slate-800 text-emerald-400 border border-slate-700";
+                        } else {
+                            btn.className = "panel-tab-btn w-full px-3 py-2 rounded-lg text-xs font-mono text-left flex items-center justify-between bg-slate-900 text-slate-400 border border-transparent hover:border-slate-800";
+                        }
+                    });
+
+                    if (tabKey === 'museum') renderMuseum();
+                    if (tabKey === 'upgrades') renderUpgrades();
+                    audio.playClick();
+                });
+            });
+
+            // Map Scanner Canvas Pointer Events (Mouse & Touch)
+            const mapCanvas = elements.mapCanvas;
+
+            const updateCursor = (e) => {
+                const rect = mapCanvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                
+                state.cursor.x = clientX - rect.left;
+                state.cursor.y = clientY - rect.top;
+                state.cursor.active = true;
+
+                // Coords Display
+                const mapX = Math.round((state.cursor.x / mapCanvas.width) * 1000);
+                const mapY = Math.round((state.cursor.y / mapCanvas.height) * 1000);
+                elements.coordsDisplay.textContent = `X: ${mapX}, Y: ${mapY}`;
+            };
+
+            mapCanvas.addEventListener('mousemove', updateCursor);
+            mapCanvas.addEventListener('mouseenter', () => { state.cursor.active = true; });
+            mapCanvas.addEventListener('mouseleave', () => { state.cursor.active = false; });
+
+            mapCanvas.addEventListener('touchstart', (e) => {
+                updateCursor(e);
+                audio.init();
+            }, { passive: true });
+            mapCanvas.addEventListener('touchmove', updateCursor, { passive: true });
+            mapCanvas.addEventListener('touchend', () => { state.cursor.active = false; });
+
+            // Excavate Button Click
+            elements.btnStartExcavate.addEventListener('click', startExcavation);
+
+            // Cancel Excavation Button
+            elements.btnCancelExcavate.addEventListener('click', () => {
+                state.excavation.active = false;
+                elements.views.excavation.classList.add('hidden');
+                audio.playClick();
+            });
+
+            // Dig Canvas Pointer Drag Events
+            const digCanvas = elements.digCanvas;
+            
+            const startBrushing = (e) => {
+                isBrushing = true;
+                state.excavation.lastPoint = null;
+                handleBrushMove(e);
+            };
+
+            const stopBrushing = () => {
+                isBrushing = false;
+                state.excavation.lastPoint = null;
+            };
+
+            digCanvas.addEventListener('mousedown', startBrushing);
+            digCanvas.addEventListener('mousemove', handleBrushMove);
+            window.addEventListener('mouseup', stopBrushing);
+
+            digCanvas.addEventListener('touchstart', (e) => {
+                startBrushing(e.touches[0]);
+            }, { passive: true });
+            digCanvas.addEventListener('touchmove', (e) => {
+                handleBrushMove(e.touches[0]);
+            }, { passive: true });
+            digCanvas.addEventListener('touchend', stopBrushing);
+
+            // Modal Buttons
+            elements.btnCloseDiscovery.addEventListener('click', () => {
+                elements.modalDiscovery.classList.add('hidden');
+                audio.playClick();
+            });
+
+            elements.btnStartGame.addEventListener('click', () => {
+                audio.init();
+                elements.modalTutorial.classList.add('hidden');
+                audio.playClick();
+            });
+
+            elements.btnAudio.addEventListener('click', () => {
+                audio.enabled = !audio.enabled;
+                elements.audioIcon.className = audio.enabled ? "fa-solid fa-volume-high" : "fa-solid fa-volume-xmark text-rose-400";
+            });
+
+            // Copy Link Listener
+            document.getElementById('btn-copy-link').addEventListener('click', () => {
+                const dummy = document.createElement('input');
+                document.body.appendChild(dummy);
+                dummy.value = window.location.href;
+                dummy.select();
+                document.execCommand('copy');
+                document.body.removeChild(dummy);
+
+                const icon = document.getElementById('link-icon');
+                icon.className = "fa-solid fa-check text-emerald-400";
+                setTimeout(() => {
+                    icon.className = "fa-solid fa-link";
+                }, 2000);
+            });
+
+            document.getElementById('btn-help').addEventListener('click', () => {
+                elements.modalTutorial.classList.remove('hidden');
+            });
+        }
+
+        /**
+         * Initialize Game Engine
+         */
+        window.onload = () => {
+            spawnSiteTargets();
+            resizeCanvases();
+            initEvents();
+            updateHeaderStats();
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+</html>
